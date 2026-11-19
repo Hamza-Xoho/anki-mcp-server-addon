@@ -6,6 +6,9 @@ registry lookup, arbitrary tool forwarding, URL import or database writes.
 import base64
 import hashlib
 import json
+import re
+from html.parser import HTMLParser
+from urllib.parse import unquote
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from pydantic import Field
@@ -83,6 +86,54 @@ def _note(col, nid):
             'cards': sorted((_card(c) for c in note.cards()), key=lambda c: c['id'])}
 
 
+class _MediaReferences(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True);self.names=set()
+    def handle_starttag(self,tag,attrs):
+        if tag.lower()=='img':
+            self.names.update(value for key,value in attrs if key.lower()=='src' and value)
+
+
+def _media_dependencies(col,operation,arguments,target):
+    texts=list(arguments.get('fields',{}).values())
+    notes=target if isinstance(target,list) else [target] if operation=='update_note_fields' else []
+    pairs=[]
+    for note in notes:
+        texts.extend(note['fields'].values());pairs.append((note['model'],note['fields']))
+    if operation=='add_note':pairs.append((target['model'],arguments['fields']))
+    elif operation=='update_note_fields':pairs.append((target['model'],arguments['fields']))
+    for model,fields in pairs:
+        for template in model.get('tmpls',[]):
+            for key in ('qfmt','afmt'):
+                markup=template.get(key,'')
+                def section(match):
+                    name=match[2].strip()
+                    if name not in fields:return match[3]
+                    present=bool(re.sub(r'<[^>]+>|\s|&nbsp;','',fields[name]))
+                    return match[3] if present!=(match[1]=='^') else ''
+                for _ in range(3):markup=re.sub(r'\{\{([#^])([^}]+)\}\}(.*?)\{\{/\2\}\}',section,markup,flags=re.S)
+                markup=re.sub(r'\{\{([^{}]+)\}\}',lambda m:fields.get(m[1].split(':')[-1].strip(),''),markup)
+                texts.append(markup)
+    parser=_MediaReferences()
+    for text in texts:
+        parser.feed(text)
+        parser.names.update(re.findall(r'\[sound:([^\]]+)\]',text))
+    if len(parser.names)>100:_refuse('Too many referenced media files for complete state')
+    result={}
+    for raw in sorted(parser.names):
+        if raw.startswith('data:'):continue
+        if re.match(r'^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)',raw):
+            result[raw]={'external':True};continue
+        name=unquote(raw)
+        if sanitize_media_filename(name)!=name:_refuse('Unsupported referenced media filename')
+        path=Path(col.media.dir())/name
+        if not path.exists() and not path.is_symlink():result[name]=None
+        else:
+            observed=read_media_file(name)
+            result[name]={k:observed[k] for k in ('filename','size','sha256')}
+    return result
+
+
 @Tool('student_operation_state', 'Read complete bounded state for one fixed student operation. This is not authorization.', title='Student Operation State')
 def student_operation_state(operation: Operation, arguments: Arguments) -> dict[str, Any]:
     _validate(operation, arguments)
@@ -118,7 +169,8 @@ def student_operation_state(operation: Operation, arguments: Arguments) -> dict[
         target = read_media_file(arguments['filename']) if path.exists() or path.is_symlink() else None
         if target is not None:
             target = {k: target[k] for k in ('filename', 'size', 'sha256')}
-    result = {'version': 1, 'operation': operation, 'arguments': arguments, 'binding': binding, 'target': target}
+    result = {'version': 2, 'operation': operation, 'arguments': arguments, 'binding': binding, 'target': target,
+              'media': _media_dependencies(col,operation,arguments,target)}
     # Roundtrip isolates the snapshot from mutable Anki model/deck dictionaries.
     encoded = json.dumps(result, sort_keys=True, allow_nan=False)
     if len(encoded.encode()) > 16 * 1024 * 1024:
@@ -157,4 +209,4 @@ def conditional_student_operation(operation: Operation, arguments: Arguments, ex
             verified = False
         if not verified:
             raise HandlerError('Media write outcome is uncertain: byte readback failed', code='uncertain')
-    return {'version': 1, 'result': result, 'binding': current['binding']}
+    return {'version': 2, 'result': result, 'binding': current['binding']}

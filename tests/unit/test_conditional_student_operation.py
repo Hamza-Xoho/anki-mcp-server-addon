@@ -129,3 +129,41 @@ def test_conditional_suspension_binds_scheduling_and_dispatches(boundary, monkey
     current = state('card_suspend', args)
     assert dispatch('card_suspend', args, current)['result'] == {'suspended_count':1}
     assert calls == [args]
+
+
+@pytest.mark.parametrize('location',['old_fields','new_fields'])
+def test_referenced_media_byte_change_refuses_note_operation(boundary,monkeypatch,tmp_path,location):
+    import base64,hashlib
+    state,dispatch,_,note,_,sent=boundary
+    original_col=state.__globals__['get_col']()
+    monkeypatch.setitem(state.__globals__,'get_col',lambda:SimpleNamespace(get_note=original_col.get_note,get_card=original_col.get_card,media=SimpleNamespace(dir=lambda:str(tmp_path))))
+    path=tmp_path/'review.png';path.write_bytes(b'old bytes')
+    def read(filename):
+        data=(tmp_path/filename).read_bytes()
+        return {'filename':filename,'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'data':base64.b64encode(data).decode()}
+    monkeypatch.setitem(state.__globals__,'read_media_file',read)
+    if location=='old_fields':note.front='<img src="review.png">'
+    args={'id':17,'fields':{'Front':'<img src="review.png">' if location=='new_fields' else 'after','Back':'answer'}}
+    expected=state('update_note_fields',args)
+    path.write_bytes(b'changed bytes')
+    with pytest.raises(HandlerError,match='changed'):
+        dispatch('update_note_fields',args,expected)
+    assert not sent
+
+
+def test_template_field_media_reference_binds_actual_file(boundary,monkeypatch,tmp_path):
+    import base64,hashlib
+    state,dispatch,_,note,_,sent=boundary
+    original_col=state.__globals__['get_col']()
+    monkeypatch.setitem(state.__globals__,'get_col',lambda:SimpleNamespace(get_note=original_col.get_note,get_card=original_col.get_card,media=SimpleNamespace(dir=lambda:str(tmp_path))))
+    note.items=lambda:[('Front','question'),('Back','review.png')]
+    note.note_type=lambda:{'id':1,'name':'Basic','flds':[{'name':'Front'},{'name':'Back'}], 'tmpls':[{'qfmt':'<img src="{{Back}}">','afmt':'{{Back}}'}],'css':''}
+    path=tmp_path/'review.png';path.write_bytes(b'old bytes')
+    def read(filename):
+        data=(tmp_path/filename).read_bytes()
+        return {'filename':filename,'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'data':base64.b64encode(data).decode()}
+    monkeypatch.setitem(state.__globals__,'read_media_file',read)
+    args={'id':17,'fields':{'Front':'new question','Back':'review.png'}}
+    expected=state('update_note_fields',args);path.write_bytes(b'changed bytes')
+    with pytest.raises(HandlerError,match='changed'):dispatch('update_note_fields',args,expected)
+    assert not sent

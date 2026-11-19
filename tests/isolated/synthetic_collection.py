@@ -105,6 +105,17 @@ async def run(package_name):
                 duplicate = await client.call_tool('conditional_student_operation', {
                     'operation': 'add_note', 'arguments': create, 'expected_state': state})
                 assert duplicate.isError
+                # Media bytes referenced through fields are part of conditional guard v2.
+                media_create = {'deck_name':'Default','model_name':'Cloze','fields':{
+                    'Text':'Media-bound {{c1::synthetic}} <img src="synthetic.png">','Back Extra':''},'tags':['APLUS_ISOLATED']}
+                media_state=await call('student_operation_state',{'operation':'add_note','arguments':media_create})
+                assert media_state['version']==2 and media_state['media']['synthetic.png']['sha256']==hashlib.sha256(image).hexdigest()
+                (Path(col.media.dir())/'synthetic.png').write_bytes(b'foreign bytes')
+                refused=await client.call_tool('conditional_student_operation',{'operation':'add_note','arguments':media_create,'expected_state':media_state})
+                assert refused.isError
+                (Path(col.media.dir())/'synthetic.png').write_bytes(image)
+                media_state=await call('student_operation_state',{'operation':'add_note','arguments':media_create})
+                await call('conditional_student_operation',{'operation':'add_note','arguments':media_create,'expected_state':media_state})
                 # Same profile/path/creation values do not hide an observed close/reopen.
                 freshness.end()
                 freshness.begin()
