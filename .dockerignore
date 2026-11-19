@@ -1,0 +1,8 @@
+**
+!anki_mcp_server.ankiaddon
+!tests/
+!tests/smoke/
+!tests/smoke/import_smoke.py
+!tests/isolated/
+!tests/isolated/Dockerfile
+!tests/isolated/synthetic_collection.py

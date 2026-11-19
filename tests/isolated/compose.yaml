@@ -1,0 +1,22 @@
+name: anki-companion-isolated
+services:
+  compatibility:
+    image: anki-companion-isolated:${COMPANION_REVISION:-uncommitted-dirty}
+    build:
+      context: ../..
+      dockerfile: tests/isolated/Dockerfile
+      args:
+        SOURCE_REVISION: ${COMPANION_REVISION:-uncommitted-dirty}
+    network_mode: none
+    read_only: true
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 1.5
+    mem_limit: 1536m
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,nosuid,size=256m,uid=1000,gid=1000
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
