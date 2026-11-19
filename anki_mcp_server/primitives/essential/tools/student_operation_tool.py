@@ -17,10 +17,11 @@ from .collection_identity_tool import collection_identity
 from .add_note_tool import add_note
 from .update_note_fields_tool import update_note_fields
 from .card_management.card_unsuspend_tool import card_unsuspend
+from .card_management.card_suspend_tool import card_suspend
 from .store_media_file_tool import store_media_file
 from .read_media_file_tool import read_media_file
 
-Operation = Annotated[Literal['add_note', 'update_note_fields', 'card_unsuspend', 'store_media_file'], Field(description='One of four fixed student operations')]
+Operation = Annotated[Literal['add_note', 'update_note_fields', 'card_unsuspend', 'card_suspend', 'store_media_file'], Field(description='One of five fixed student operations')]
 Arguments = Annotated[dict[str, Any], Field(description='Exact operation-specific arguments; no paths or URLs')]
 Expected = Annotated[dict[str, Any], Field(description='Unmodified complete student_operation_state response reviewed for this request')]
 
@@ -39,6 +40,7 @@ def _validate(operation, arguments):
         'add_note': {'deck_name', 'model_name', 'fields', 'tags'},
         'update_note_fields': {'id', 'fields'},
         'card_unsuspend': {'card_ids'},
+        'card_suspend': {'card_ids'},
         'store_media_file': {'filename', 'data'},
     }
     if operation not in required or not isinstance(arguments, dict) or set(arguments) != required[operation]:
@@ -51,7 +53,7 @@ def _validate(operation, arguments):
             _refuse('Complete field strings required')
     if operation == 'update_note_fields' and (type(arguments['id']) is not int or arguments['id'] <= 0):
         _refuse('Expected positive note ID')
-    if operation == 'card_unsuspend':
+    if operation in ('card_unsuspend', 'card_suspend'):
         _ids(arguments['card_ids'])
     if operation == 'add_note':
         if any(not isinstance(arguments[k], str) or not arguments[k] for k in ('deck_name', 'model_name')) or not isinstance(arguments['tags'], list) or any(not isinstance(t, str) for t in arguments['tags']):
@@ -91,7 +93,9 @@ def student_operation_state(operation: Operation, arguments: Arguments) -> dict[
     col = get_col()
     if operation == 'update_note_fields':
         target = _note(col, arguments['id'])
-    elif operation == 'card_unsuspend':
+        if set(arguments['fields']) != set(target['fields']):
+            _refuse('Complete model fields required')
+    elif operation in ('card_unsuspend', 'card_suspend'):
         cards = [col.get_card(cid) for cid in arguments['card_ids']]
         target = [_note(col, nid) for nid in sorted({c.nid for c in cards})]
     elif operation == 'add_note':
@@ -133,6 +137,8 @@ def conditional_student_operation(operation: Operation, arguments: Arguments, ex
         result = update_note_fields(**arguments)
     elif operation == 'card_unsuspend':
         result = card_unsuspend(**arguments)
+    elif operation == 'card_suspend':
+        result = card_suspend(**arguments)
     else:
         if current['target'] is not None:
             expected_hash = hashlib.sha256(base64.b64decode(arguments['data'], validate=True)).hexdigest()

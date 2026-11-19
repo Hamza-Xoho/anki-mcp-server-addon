@@ -65,7 +65,9 @@ async def run(package_name):
                 note = info['notes'][0]
                 assert note['noteId'] == nid and len(note['cards']) == 2
                 first_card, sibling = note['cards']
-                await call('card_suspend', {'card_ids': [first_card]})
+                suspend_args = {'card_ids': [first_card]}
+                suspend_state = await call('student_operation_state', {'operation':'card_suspend', 'arguments':suspend_args})
+                await call('conditional_student_operation', {'operation':'card_suspend', 'arguments':suspend_args, 'expected_state':suspend_state})
                 assert col.get_card(first_card).queue == -1
                 assert col.get_card(sibling).queue != -1
                 await call('card_unsuspend', {'card_ids': [first_card]})
@@ -80,7 +82,7 @@ async def run(package_name):
                 assert media['sha256'] == hashlib.sha256(image).hexdigest()
                 assert media['size'] == len(image)
                 # Conditional dispatch uses the same real MCP memory transport.
-                update = {'id': nid, 'fields': {'Back Extra': 'conditionally updated'}}
+                update = {'id': nid, 'fields': {'Text': note['fields']['Text']['value'], 'Back Extra': 'conditionally updated'}}
                 state = await call('student_operation_state', {'operation': 'update_note_fields', 'arguments': update})
                 # A queued foreign edit must refuse before the requested update.
                 foreign = col.get_note(nid)

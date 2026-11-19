@@ -38,7 +38,7 @@ def test_conditional_dispatch_registered_as_mutating(real_mcp):
 @pytest.mark.parametrize('change', ['session', 'fields', 'sibling_state'])
 def test_changed_state_refuses_before_mutation(boundary, change):
     state, dispatch, identity, note, card, sent = boundary
-    args = {'id':17, 'fields':{'Front':'after'}}
+    args = {'id':17, 'fields':{'Front':'after','Back':'answer'}}
     expected = state('update_note_fields', args)
     if change == 'session': identity['collection_session'] = 'session-b'
     elif change == 'fields': note.front = 'foreign edit'
@@ -49,7 +49,7 @@ def test_changed_state_refuses_before_mutation(boundary, change):
 
 def test_unchanged_state_dispatches_exactly_one_fixed_operation(boundary):
     state, dispatch, _, _, _, sent = boundary
-    args = {'id':17, 'fields':{'Front':'after'}}
+    args = {'id':17, 'fields':{'Front':'after','Back':'answer'}}
     expected = state('update_note_fields', args)
     assert dispatch('update_note_fields', args, expected)['result'] == {'noteId':17}
     assert sent == [args]
@@ -68,13 +68,13 @@ def test_unsupported_arguments_fail_closed(boundary, operation, args):
 def test_incomplete_binding_refuses_even_with_matching_null_session(boundary):
     state, _, identity, _, _, _ = boundary
     identity['collection_session'] = None
-    with pytest.raises(HandlerError): state('update_note_fields', {'id':17,'fields':{'Front':'after'}})
+    with pytest.raises(HandlerError): state('update_note_fields', {'id':17,'fields':{'Front':'after','Back':'answer'}})
 
 
 def test_scheduling_edit_with_same_mod_refuses_dispatch(boundary):
     state, dispatch, _, _, card, sent = boundary
     card.ivl=10
-    args={'id':17,'fields':{'Front':'after'}}
+    args={'id':17,'fields':{'Front':'after','Back':'answer'}}
     expected=state('update_note_fields',args)
     card.ivl=20
     with pytest.raises(HandlerError, match='changed'):
@@ -105,3 +105,27 @@ def test_conditional_media_mismatched_byte_readback_is_uncertain(boundary, monke
     expected=state('store_media_file',args)
     with pytest.raises(HandlerError,match='uncertain'):
         dispatch('store_media_file',args,expected)
+
+
+def test_partial_field_update_is_refused_before_mutation(boundary):
+    state, dispatch, _, _, _, sent = boundary
+    with pytest.raises(HandlerError, match='Complete'):
+        expected = state('update_note_fields', {'id':17, 'fields':{'Front':'after'}})
+        dispatch('update_note_fields', {'id':17, 'fields':{'Front':'after'}}, expected)
+    assert not sent
+
+
+def test_conditional_suspension_binds_scheduling_and_dispatches(boundary, monkeypatch):
+    state, dispatch, _, _, card, _ = boundary
+    card.queue = 0
+    calls = []
+    monkeypatch.setitem(state.__globals__, 'card_suspend', lambda **kw: calls.append(kw) or {'suspended_count':1})
+    args = {'card_ids':[23]}
+    expected = state('card_suspend', args)
+    card.ivl = 2
+    with pytest.raises(HandlerError, match='changed'):
+        dispatch('card_suspend', args, expected)
+    assert not calls
+    current = state('card_suspend', args)
+    assert dispatch('card_suspend', args, current)['result'] == {'suspended_count':1}
+    assert calls == [args]
