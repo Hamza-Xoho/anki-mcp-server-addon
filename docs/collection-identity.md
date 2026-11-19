@@ -66,11 +66,11 @@ coordinator/UI/onboarding, lost receipts or atomic dispatch preconditions.
 
 `student_operation_state(operation, arguments)` reads bounded complete state for
 `add_note` (deck_name, model_name, fields, tags), `update_note_fields` (id, fields),
-`card_unsuspend` (card_ids), or `store_media_file` (filename, data). All listed
+`card_unsuspend` / `card_suspend` (card_ids), or `store_media_file` (filename, data). All listed
 keys are mandatory and extra keys are refused. No path/URL or registry forwarding.
 `conditional_student_operation(operation, arguments, expected_state)` recomputes
 and compares the exact snapshot, then invokes a fixed primitive synchronously in
-one main-thread request. Snapshot version 1 binds exact arguments, profile/path/
+one main-thread request. Snapshot version 2 binds referenced media and exact arguments, profile/path/
 creation/session, complete affected note fields/tags/model/card ownership and
 queue state plus a deterministic full backend-card serialization digest, selected
 model/deck or exact media hash/absence. Missing freshness
@@ -82,7 +82,7 @@ This is a dispatch precondition, not quality/user authorization, a cross-process
 transaction or persistent uniqueness. It cannot detect an invisible in-place
 restore with identical state. Callers still journal intent, enforce proposal
 authorization and read back each result. A lost create response is uncertain;
-never blindly resend. It does not add conditional suspension yet.
+never blindly resend. Conditional suspension is included in the fixed allowlist.
 
 New Linux verification: 877 unit tests pass (867 historical baseline plus 10).
 Packaged Anki/aqt 26.9.2 memory-transport checks pass for textual and numeric
@@ -96,3 +96,20 @@ The fresh engineering review found incomplete scheduling snapshots and media
 filename substitution. Two regressions failed first, then passed with full-card
 serialization and exact filename/byte verification. Post-fix unit suite: 880
 passed; packaged textual/numeric synthetic checks pass. No second review.
+
+## Completed student-product boundary follow-up
+
+Current state version2 includes exact local image/sound dependencies referenced
+by fields and expanded templates, including the previous fields for updates.
+Primary coordination retains verified media bytes and predicts only explicitly
+staged uploads. CSS resource dependencies (model CSS, inline styles, style
+elements and stylesheet links), including escaped loader syntax, explicitly
+refuse before returning a dispatchable state. They are not silently omitted from
+quality evidence. Ordinary self-contained styling remains supported.
+
+The final whole-product engineering review found CSS resource omission. Six
+failed-first companion cases now pass; complete unit suite891passed0skips.
+Evidence: .artifacts/student-production/material-fix-final-unit.log plus CSS RED
+logs. Primary final packet records the exact archive/revision and combined
+installed real-Anki textual/numeric acceptance. Historical counts above remain
+historical subsets, not current whole-product acceptance.

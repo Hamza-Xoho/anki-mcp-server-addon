@@ -167,3 +167,21 @@ def test_template_field_media_reference_binds_actual_file(boundary,monkeypatch,t
     expected=state('update_note_fields',args);path.write_bytes(b'changed bytes')
     with pytest.raises(HandlerError,match='changed'):dispatch('update_note_fields',args,expected)
     assert not sent
+
+
+@pytest.mark.parametrize('css',['.diagram{background:url("diagram.png")}','@import "style.css";',r'.diagram{background:u\72l(diagram.png)}'])
+def test_css_resource_dependencies_refused_before_conditional_dispatch(boundary,monkeypatch,css):
+    state,dispatch,_,note,_,sent=boundary
+    model=note.note_type();model['css']=css
+    monkeypatch.setattr(note,'note_type',lambda:model)
+    with pytest.raises(HandlerError,match='CSS'):
+        expected=state('update_note_fields',{'id':17,'fields':{'Front':'after','Back':'answer'}})
+        dispatch('update_note_fields',expected['arguments'],expected)
+    assert not sent
+
+
+@pytest.mark.parametrize('markup',['<div style="background:url(diagram.png)">question</div>','<style>@import "style.css";</style>question','<link rel="stylesheet" href="style.css">question'])
+def test_embedded_stylesheet_dependencies_refused(boundary,markup):
+    state,_,_,note,_,sent=boundary;note.front=markup
+    with pytest.raises(HandlerError,match='CSS'):state('update_note_fields',{'id':17,'fields':{'Front':'after','Back':'answer'}})
+    assert not sent

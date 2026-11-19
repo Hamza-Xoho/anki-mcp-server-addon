@@ -88,10 +88,18 @@ def _note(col, nid):
 
 class _MediaReferences(HTMLParser):
     def __init__(self):
-        super().__init__(convert_charrefs=True);self.names=set()
+        super().__init__(convert_charrefs=True);self.names=set();self.in_style=False
     def handle_starttag(self,tag,attrs):
+        if tag=='style':self.in_style=True
+        if tag=='link' and dict(attrs).get('rel','').lower()=='stylesheet':_refuse('CSS stylesheet resources are unsupported for student operations')
+        if any(key=='style' and re.search(r'url\s*\(|@import|\\',value or '',re.I) for key,value in attrs):
+            _refuse('CSS resource dependencies or escapes are unsupported for student operations')
         if tag.lower()=='img':
             self.names.update(value for key,value in attrs if key.lower()=='src' and value)
+    def handle_endtag(self,tag):
+        if tag=='style':self.in_style=False
+    def handle_data(self,data):
+        if self.in_style and re.search(r'url\s*\(|@import|\\',data,re.I):_refuse('CSS resource dependencies or escapes are unsupported for student operations')
 
 
 def _media_dependencies(col,operation,arguments,target):
@@ -103,6 +111,11 @@ def _media_dependencies(col,operation,arguments,target):
     if operation=='add_note':pairs.append((target['model'],arguments['fields']))
     elif operation=='update_note_fields':pairs.append((target['model'],arguments['fields']))
     for model,fields in pairs:
+        # This boundary cannot promise complete evidence/rendering for CSS-loaded
+        # assets. Fail before presenting a dispatchable state; escaped syntax is
+        # also refused, rather than silently missing a dependency.
+        if re.search(r'url\s*\(|@import|\\',model.get('css',''),re.I):
+            _refuse('CSS resource dependencies or escapes are unsupported for student operations')
         for template in model.get('tmpls',[]):
             for key in ('qfmt','afmt'):
                 markup=template.get(key,'')
