@@ -79,6 +79,30 @@ async def run(package_name):
                 assert base64.b64decode(media['data'], validate=True) == image
                 assert media['sha256'] == hashlib.sha256(image).hexdigest()
                 assert media['size'] == len(image)
+                # Conditional dispatch uses the same real MCP memory transport.
+                update = {'id': nid, 'fields': {'Back Extra': 'conditionally updated'}}
+                state = await call('student_operation_state', {'operation': 'update_note_fields', 'arguments': update})
+                # A queued foreign edit must refuse before the requested update.
+                foreign = col.get_note(nid)
+                foreign['Back Extra'] = 'foreign edit'
+                col.update_note(foreign)
+                refused = await client.call_tool('conditional_student_operation', {
+                    'operation': 'update_note_fields', 'arguments': update, 'expected_state': state})
+                assert refused.isError
+                assert col.get_note(nid)['Back Extra'] == 'foreign edit'
+                state = await call('student_operation_state', {'operation': 'update_note_fields', 'arguments': update})
+                await call('conditional_student_operation', {'operation': 'update_note_fields',
+                    'arguments': update, 'expected_state': state})
+                assert col.get_note(nid)['Back Extra'] == 'conditionally updated'
+                create = {'deck_name': 'Default', 'model_name': 'Cloze', 'fields': {
+                    'Text': 'Conditional {{c1::new}}', 'Back Extra': ''}, 'tags': ['APLUS_ISOLATED']}
+                state = await call('student_operation_state', {'operation': 'add_note', 'arguments': create})
+                created = await call('conditional_student_operation', {'operation': 'add_note',
+                    'arguments': create, 'expected_state': state})
+                assert col.get_note(created['result']['note_id'])['Text'] == create['fields']['Text']
+                duplicate = await client.call_tool('conditional_student_operation', {
+                    'operation': 'add_note', 'arguments': create, 'expected_state': state})
+                assert duplicate.isError
                 # Same profile/path/creation values do not hide an observed close/reopen.
                 freshness.end()
                 freshness.begin()

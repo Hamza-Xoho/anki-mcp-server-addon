@@ -22,9 +22,9 @@ It never authorizes a mutation by itself.
 A coordinator must explicitly bind the intended profile/path, validate complete
 identity plus a live session, bind reviewed note/card ownership and exact state,
 and check those preconditions at write dispatch. Separate read-then-write calls
-still have a race; these tools do not implement atomic conditional mutation.
-A future narrow conditional-operation contract is needed before claiming that
-profile switches between preflight and dispatch are prevented. Missing signals,
+still have a race. The new student_operation_state and
+conditional_student_operation contract closes the queued main-thread gap for
+four fixed operations; see the contract below. Missing signals,
 changed sessions, changed/foreign targets and inconclusive reads must fail closed.
 A copied nonce is not a substitute for these checks. Equal numeric note/card IDs
 are valid; ownership is verified from typed relationships.
@@ -61,3 +61,31 @@ including byte readback and unsuspend, using both textual and numeric add-on
 package directory names. This does not validate Mac installation, GUI queue
 routing, HTTP authentication, real profiles, ColdRecall templates, production
 coordinator/UI/onboarding, lost receipts or atomic dispatch preconditions.
+
+## Conditional student operations
+
+`student_operation_state(operation, arguments)` reads bounded complete state for
+`add_note` (deck_name, model_name, fields, tags), `update_note_fields` (id, fields),
+`card_unsuspend` (card_ids), or `store_media_file` (filename, data). All listed
+keys are mandatory and extra keys are refused. No path/URL or registry forwarding.
+`conditional_student_operation(operation, arguments, expected_state)` recomputes
+and compares the exact snapshot, then invokes a fixed primitive synchronously in
+one main-thread request. Snapshot version 1 binds exact arguments, profile/path/
+creation/session, complete affected note fields/tags/model/card ownership and
+queue state, selected model/deck or exact media hash/absence. Missing freshness
+fails closed. Creation uses Anki's native fields_check before dispatch; errors
+do not fall through to writing. Different existing media bytes are refused.
+
+This is a dispatch precondition, not quality/user authorization, a cross-process
+transaction or persistent uniqueness. It cannot detect an invisible in-place
+restore with identical state. Callers still journal intent, enforce proposal
+authorization and read back each result. A lost create response is uncertain;
+never blindly resend. It does not add conditional suspension yet.
+
+New Linux verification: 877 unit tests pass (867 historical baseline plus 10).
+Packaged Anki/aqt 26.9.2 memory-transport checks pass for textual and numeric
+package names, including stale foreign-field refusal, conditional update/create
+and duplicate refusal. The initial packaged run exposed a missing
+dupe_or_empty API; fields_check is the verified replacement. Existing fixture
+loop-scope deprecation remains. Raw evidence stays ignored under
+.artifacts/conditional-dispatch. No HTTP/Qt/Mac/live-collection acceptance claim.
