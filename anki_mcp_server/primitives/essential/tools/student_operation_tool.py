@@ -70,7 +70,8 @@ def _validate(operation, arguments):
 
 
 def _card(card):
-    return {key: getattr(card, key) for key in ('id', 'nid', 'did', 'ord', 'queue', 'type', 'due', 'mod')}
+    return {**{key: getattr(card, key) for key in ('id', 'nid', 'did', 'ord', 'queue', 'type', 'due', 'mod')},
+            'backend_sha256': hashlib.sha256(card._to_backend_card().SerializeToString(deterministic=True)).hexdigest()}
 
 
 def _note(col, nid):
@@ -138,4 +139,16 @@ def conditional_student_operation(operation: Operation, arguments: Arguments, ex
             if current['target']['sha256'] != expected_hash:
                 _refuse('Existing media has different bytes; choose a new filename')
         result = store_media_file(**arguments)
+        wanted = base64.b64decode(arguments['data'], validate=True)
+        if result.get('filename') != arguments['filename']:
+            raise HandlerError('Media write outcome is uncertain: companion renamed the file', code='uncertain')
+        try:
+            observed = read_media_file(arguments['filename'])
+            verified = (observed['size'] == len(wanted) and
+                        observed['sha256'] == hashlib.sha256(wanted).hexdigest() and
+                        base64.b64decode(observed['data'], validate=True) == wanted)
+        except Exception:
+            verified = False
+        if not verified:
+            raise HandlerError('Media write outcome is uncertain: byte readback failed', code='uncertain')
     return {'version': 1, 'result': result, 'binding': current['binding']}

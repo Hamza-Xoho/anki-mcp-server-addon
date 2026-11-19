@@ -23,6 +23,7 @@ def boundary(real_mcp, monkeypatch):
         front = 'before'
     note = Note()
     card = SimpleNamespace(id=23, nid=17, did=1, ord=0, queue=-1, type=0, due=0, mod=1)
+    card._to_backend_card = lambda: SimpleNamespace(SerializeToString=lambda **_: str(getattr(card,'ivl',0)).encode())
     col = SimpleNamespace(get_note=lambda id: note, get_card=lambda id: card)
     sent = []
     monkeypatch.setitem(globals_, 'collection_identity', lambda: deepcopy(identity))
@@ -68,3 +69,26 @@ def test_incomplete_binding_refuses_even_with_matching_null_session(boundary):
     state, _, identity, _, _, _ = boundary
     identity['collection_session'] = None
     with pytest.raises(HandlerError): state('update_note_fields', {'id':17,'fields':{'Front':'after'}})
+
+
+def test_scheduling_edit_with_same_mod_refuses_dispatch(boundary):
+    state, dispatch, _, _, card, sent = boundary
+    card.ivl=10
+    args={'id':17,'fields':{'Front':'after'}}
+    expected=state('update_note_fields',args)
+    card.ivl=20
+    with pytest.raises(HandlerError, match='changed'):
+        dispatch('update_note_fields',args,expected)
+    assert not sent
+
+
+def test_media_rename_is_uncertain_not_acknowledged(boundary, monkeypatch, tmp_path):
+    import base64
+    state, dispatch, _, _, _, _ = boundary
+    g=state.__globals__
+    monkeypatch.setitem(g,'get_col',lambda: SimpleNamespace(media=SimpleNamespace(dir=lambda:str(tmp_path))))
+    monkeypatch.setitem(g,'store_media_file',lambda **kw:{'filename':'renamed.png'})
+    args={'filename':'original.png','data':base64.b64encode(b'bytes').decode()}
+    expected=state('store_media_file',args)
+    with pytest.raises(HandlerError,match='uncertain'):
+        dispatch('store_media_file',args,expected)

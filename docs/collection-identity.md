@@ -72,9 +72,11 @@ keys are mandatory and extra keys are refused. No path/URL or registry forwardin
 and compares the exact snapshot, then invokes a fixed primitive synchronously in
 one main-thread request. Snapshot version 1 binds exact arguments, profile/path/
 creation/session, complete affected note fields/tags/model/card ownership and
-queue state, selected model/deck or exact media hash/absence. Missing freshness
+queue state plus a deterministic full backend-card serialization digest, selected
+model/deck or exact media hash/absence. Missing freshness
 fails closed. Creation uses Anki's native fields_check before dispatch; errors
-do not fall through to writing. Different existing media bytes are refused.
+do not fall through to writing. Different existing media bytes are refused. A renamed result or mismatched exact
+byte readback after sending is uncertain, never an acknowledged media success.
 
 This is a dispatch precondition, not quality/user authorization, a cross-process
 transaction or persistent uniqueness. It cannot detect an invisible in-place
@@ -89,3 +91,8 @@ and duplicate refusal. The initial packaged run exposed a missing
 dupe_or_empty API; fields_check is the verified replacement. Existing fixture
 loop-scope deprecation remains. Raw evidence stays ignored under
 .artifacts/conditional-dispatch. No HTTP/Qt/Mac/live-collection acceptance claim.
+
+The fresh engineering review found incomplete scheduling snapshots and media
+filename substitution. Two regressions failed first, then passed with full-card
+serialization and exact filename/byte verification. Post-fix unit suite: 879
+passed; packaged textual/numeric synthetic checks pass. No second review.
