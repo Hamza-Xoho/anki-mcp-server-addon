@@ -76,6 +76,9 @@ def test_returns_documented_fields(open_collection, identity_tool):
         "modified_ts",
         "identity_sha256",
         "identity_is_unique",
+        "collection_session",
+        "identity_complete",
+        "missing_identity_fields",
         "limits",
     }
     assert result["profile_name"] == "Main"
@@ -163,14 +166,43 @@ def test_limits_state_the_non_uniqueness(open_collection, identity_tool):
     assert "does not prove" in text
 
 
-def test_missing_attributes_report_unknown_and_still_fingerprint(open_collection, identity_tool):
-    open_collection(SimpleNamespace(), SimpleNamespace(pm=None))  # no path, crt or mod
+def test_missing_attributes_are_explicit_and_have_no_fingerprint(open_collection, identity_tool):
+    open_collection(SimpleNamespace(), SimpleNamespace(pm=None))
     result = identity_tool()
-    assert result["profile_name"] == "unknown"
-    assert result["collection_path"] == "unknown"
+    assert result["profile_name"] is None
+    assert result["collection_path"] is None
     assert result["collection_created_ts"] is None
     assert result["modified_ts"] is None
+    assert result["identity_sha256"] is None
+    assert result["identity_complete"] is False
+    assert result["missing_identity_fields"] == ["profile_name", "collection_path", "collection_created_ts"]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("profile", None), ("profile", ""), ("profile", "  "), ("profile", 42),
+    ("path", None), ("path", ""), ("path", "relative/collection.anki2"),
+    ("crt", None), ("crt", True), ("crt", "1700000000"), ("crt", -1),
+])
+def test_incomplete_identity_never_produces_a_digest(open_collection, identity_tool, field, value):
+    result = _identity(open_collection, identity_tool, **{field: value})
+    assert result["identity_sha256"] is None
+    assert result["identity_complete"] is False
+    assert result["missing_identity_fields"]
+
+
+def test_real_profile_named_unknown_is_not_a_missing_value(open_collection, identity_tool):
+    result = _identity(open_collection, identity_tool, profile="unknown")
+    assert result["profile_name"] == "unknown"
+    assert result["identity_complete"] is True
+    assert result["missing_identity_fields"] == []
     assert len(result["identity_sha256"]) == 64
+
+
+def test_discovery_publishes_read_only_empty_input_contract(tools_list):
+    tool = next(t for t in tools_list if t.name == "collection_identity")
+    assert tool.annotations.readOnlyHint is True
+    assert tool.annotations.destructiveHint is False
+    assert not tool.inputSchema.get("properties")
 
 
 def test_is_read_only_and_never_calls_collection_methods(open_collection, identity_tool):
@@ -187,3 +219,21 @@ def test_unavailable_collection_propagates_handler_error(monkeypatch, identity_t
     monkeypatch.setitem(identity_tool.__globals__, "get_col", no_collection)
     with pytest.raises(HandlerError):
         identity_tool()
+
+
+def test_identity_exposes_runtime_binding_only_with_complete_evidence(open_collection, identity_tool):
+    from anki_mcp_server import collection_session as session
+    col = _collection()
+    open_collection(col, _mw())
+    session.begin()
+    try:
+        before = identity_tool()["collection_session"]
+        assert before
+        session.end()
+        assert identity_tool()["collection_session"] is None
+        session.begin()
+        assert identity_tool()["collection_session"] != before
+        col.crt = None
+        assert identity_tool()["collection_session"] is None
+    finally:
+        session.end()

@@ -212,6 +212,9 @@ _setup_vendor_path()
 # and `aqt.gui_hooks` is Anki's own module, already usable at this point.
 # See native_cache_cleanup.py and dependency_loader._resolve_cache_root.
 from aqt import gui_hooks
+from .collection_session import install_hooks as _install_collection_session_hooks
+
+_install_collection_session_hooks(gui_hooks)
 from .native_cache_cleanup import (
     on_addon_manager_will_install_addon,
     on_addons_dialog_will_delete_addons,
