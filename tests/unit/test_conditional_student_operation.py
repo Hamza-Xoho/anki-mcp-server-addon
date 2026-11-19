@@ -92,3 +92,16 @@ def test_media_rename_is_uncertain_not_acknowledged(boundary, monkeypatch, tmp_p
     expected=state('store_media_file',args)
     with pytest.raises(HandlerError,match='uncertain'):
         dispatch('store_media_file',args,expected)
+
+
+def test_conditional_media_mismatched_byte_readback_is_uncertain(boundary, monkeypatch, tmp_path):
+    import base64
+    state, dispatch, _, _, _, _ = boundary
+    g=state.__globals__
+    monkeypatch.setitem(g,'get_col',lambda: SimpleNamespace(media=SimpleNamespace(dir=lambda:str(tmp_path))))
+    monkeypatch.setitem(g,'store_media_file',lambda **kw:{'filename':'original.png'})
+    monkeypatch.setitem(g,'read_media_file',lambda filename: {'filename':filename,'size':5,'sha256':'0'*64,'data':base64.b64encode(b'wrong').decode()})
+    args={'filename':'original.png','data':base64.b64encode(b'bytes').decode()}
+    expected=state('store_media_file',args)
+    with pytest.raises(HandlerError,match='uncertain'):
+        dispatch('store_media_file',args,expected)

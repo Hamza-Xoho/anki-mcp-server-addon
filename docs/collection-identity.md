@@ -94,5 +94,5 @@ loop-scope deprecation remains. Raw evidence stays ignored under
 
 The fresh engineering review found incomplete scheduling snapshots and media
 filename substitution. Two regressions failed first, then passed with full-card
-serialization and exact filename/byte verification. Post-fix unit suite: 879
+serialization and exact filename/byte verification. Post-fix unit suite: 880
 passed; packaged textual/numeric synthetic checks pass. No second review.
